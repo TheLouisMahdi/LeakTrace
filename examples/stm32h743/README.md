@@ -8,6 +8,10 @@ The example uses a 64 KiB heap_4 arena, a 256-record tracker, and a cache-publis
 stats snapshot. An optional worker repeatedly allocates 64..512 bytes, holds each
 block for two seconds, frees it, then waits one second. The monitor polls at 1 Hz.
 
+For the optional H743-specific HardFault/MemManage/BusFault/UsageFault recorder,
+see [fault integration, register-by-register flags and limitations](FAULTS.md).
+It reserves RTC backup registers separately; it is not enabled by this heap demo.
+
 ## 1. Put the files in the project
 
 For a project that already has `Core/Inc`, `Core/Src`, `main.c`, `freertos.c`,

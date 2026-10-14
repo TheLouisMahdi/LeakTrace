@@ -35,7 +35,7 @@ def main():
             subprocess.run([str(executable)], check=True)
             print('PASS:', name, flush=True)
 
-        for name in ('core', 'portable', 'adapters', '48h', 'time_future'):
+        for name in ('core', 'portable', 'adapters', '48h', 'time_future', 'h743_fault'):
             test(name, cc, '-std=c11')
         small = ['-DLT_FAST_SLOTS=4u', '-DLT_SLOW_SLOTS=4u']
         test('stdlib', cc, '-std=c11',

@@ -6,6 +6,10 @@ LeakTrace records allocation/free events, keeps a live-allocation table, and rep
 
 **Start here:** [STM32H743 example](examples/stm32h743/README.md) · [All functions](docs/API.md) · [Settings and RAM sizing](docs/CONFIGURATION.md)
 
+**H743 fault diagnostics:** [Optional crash recorder and register/flag guide](examples/stm32h743/FAULTS.md)
+captures HardFault/MemManage/BusFault/UsageFault in RTC backup registers, with a
+dedicated emergency stack and an offline CRC-validating decoder.
+
 ## Features
 
 - Allocation/free counters, allocation failures, live block count and tracked bytes.
@@ -30,6 +34,7 @@ LeakTrace records allocation/free events, keeps a live-allocation table, and rep
 | [`tools/decode_snapshot.py`](tools/decode_snapshot.py) | Decodes a raw 136-byte `lt_stats_t` export. |
 | [`tools/decode_live.py`](tools/decode_live.py) | Decodes live records and groups outstanding allocations by caller PC. |
 | [`tools/resolve_pc.py`](tools/resolve_pc.py) | Resolves saved caller PCs to function names/source lines using a matching ELF and `addr2line`. |
+| [`tools/decode_fault.py`](tools/decode_fault.py) | Validates/decodes the optional H743 128-byte crash record, fault flags and flash-ECC caveats. |
 | [`.gitignore`](.gitignore) | Excludes generated binaries, memory dumps and Python caches. |
 | [`LICENSE`](LICENSE) | MIT license for this project's code and examples. |
 | [`docs/API.md`](docs/API.md) | Core/adapter functions, return values and interpretation of results. |
@@ -52,6 +57,7 @@ LeakTrace records allocation/free events, keeps a live-allocation table, and rep
 | [`tests/test_cpp.cpp`](tests/test_cpp.cpp) | Global C++ allocation/deallocation adapter integration. |
 | [`tests/test_48h.c`](tests/test_48h.c) | History retention across 48 hours of simulated timestamps. |
 | [`tests/test_time_future.c`](tests/test_time_future.c) | Allocation age when an event is newer than the last poll. |
+| [`tests/test_h743_fault.c`](tests/test_h743_fault.c) | Fault-record CRC corruption/partial commit and internal-SRAM frame boundaries. |
 | [`tests/test_tools.py`](tests/test_tools.py) | Python decoder formats, rollover, signed values and input validation. |
 | [`tests/arm_compile.c`](tests/arm_compile.c) | Standalone ARM compilation probe for the packed core. |
 
@@ -196,12 +202,14 @@ python tests/run.py
 python -m unittest discover -s tests -p test_tools.py -v
 ```
 
-The native C/C++ regression suite and all seven Python tool tests pass. The core has also been cross-compiled without warnings for Cortex-M0+, M3, M4, M7 and M33. This is compilation coverage, not hardware execution across those targets. The 48-hour tests advance simulated timestamps; they are not 48-hour board tests.
+The eight native C/C++ regression executables and all thirteen Python tool tests pass. The core has also been cross-compiled without warnings for Cortex-M0+, M3, M4, M7 and M33. This is compilation coverage, not hardware execution across those targets. The 48-hour tests advance simulated timestamps; they are not 48-hour board tests.
 
 The H743 integration source compiles with ARM GCC 14.3 (`-Wall -Wextra -Werror`),
 CMSIS 5.9.0, ST H7 device headers and FreeRTOS-Kernel V10.4.6. A limited linker
 probe confirms its section layout and sizes. A complete Cube firmware build and
 execution on an H743 board have not been verified.
+The optional fault recorder also passes an ARM vector/layout link probe; actual
+fault injection, reset retention and VBAT operation have not been tested.
 
 <details>
 <summary>Sources, acknowledgements and licensing</summary>
@@ -213,6 +221,8 @@ execution on an H743 board have not been verified.
 <p><sub><a href="https://github.com/ARM-software/CMSIS_5">Arm CMSIS_5</a>: <a href="https://github.com/ARM-software/CMSIS_5/blob/5.9.0/LICENSE.txt">Apache-2.0</a>. Cortex-M definitions, cache-maintenance interfaces and barriers. <a href="https://github.com/STMicroelectronics/cmsis-device-h7">ST CMSIS device H7</a>: <a href="https://github.com/STMicroelectronics/cmsis-device-h7/blob/master/LICENSE.md">Apache-2.0</a>. <a href="https://github.com/STMicroelectronics/stm32h7xx-hal-driver">ST H7 HAL</a>: <a href="https://github.com/STMicroelectronics/stm32h7xx-hal-driver/blob/master/LICENSE.md">BSD-3-Clause</a>, an external Cube-project dependency/reference.</sub></p>
 
 <p><sub>ST technical references: <a href="https://www.st.com/resource/en/reference_manual/rm0433-stm32h743-753-and-stm32h750-value-line-advanced-arm-based-32-bit-mcus-stmicroelectronics.pdf">RM0433</a> for the H743 memory map, <a href="https://www.st.com/resource/en/application_note/an4839-level-1-cache-on-stm32f7-series-and-stm32h7-series-stmicroelectronics.pdf">AN4839</a> for cache coherence, and <a href="https://www.st.com/resource/en/user_manual/um2237-stm32cubeprogrammer-software-description-stmicroelectronics.pdf">UM2237</a> for CubeProgrammer. These documents remain subject to their publishers' copyright/terms; they are linked, not redistributed under this project's MIT license.</sub></p>
+
+<p><sub>H743 fault references: <a href="https://www.st.com/resource/en/programming_manual/pm0253-stm32f7-series-and-stm32h7-series-cortexm7-processor-programming-manual-stmicroelectronics.pdf">ST PM0253</a>, <a href="https://www.st.com/resource/en/errata_sheet/es0392-stm32h742x743xig-st32h750xb-and-stm32h753xi-device-errata-stmicroelectronics.pdf">ST ES0392</a>, <a href="https://www.st.com/content/st_com/en/technical-documents/an5342--how-to-use-error-correction-code-ecc-management-for-internal-memories-protection-on-stm32-mcus-stmicroelectronics_asset/chunk-001-topic-an5342-ecc-overview.html">ST AN5342</a>, and the <a href="https://documentation-service.arm.com/static/61efd6602dd99944d051417b">Arm Cortex-M7 user guide</a>. Publisher terms apply. The recorder is original integration code; no third-party fault-handler implementation is included.</sub></p>
 
 <p><sub><a href="https://sourceware.org/newlib/libc.html">newlib</a>: libc allocation/reentrancy reference; <a href="https://sourceware.org/newlib/COPYING.NEWLIB">mixed per-file licenses</a>. <a href="https://www.gnu.org/software/binutils/">GNU Binutils</a>: external addr2line/linker tools, GPL-3.0-or-later; the <a href="https://sourceware.org/binutils/docs/ld.html">ld manual</a> states GNU FDL 1.3. No Binutils or newlib implementation is bundled.</sub></p>
 

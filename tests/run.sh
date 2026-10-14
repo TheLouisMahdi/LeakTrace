@@ -3,7 +3,7 @@ set -eu
 cd "$(dirname "$0")"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
-for f in core portable adapters 48h time_future; do
+for f in core portable adapters 48h time_future h743_fault; do
   cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic "test_${f}.c" -o "$tmp/$f"
   "$tmp/$f"
 done

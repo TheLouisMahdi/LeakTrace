@@ -4,7 +4,7 @@ $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
 $dir = Join-Path $tempRoot ("LeakTrace7_" + [guid]::NewGuid().ToString('N'))
 New-Item -Path $dir -ItemType Directory | Out-Null
 try {
-    foreach ($name in @('core','portable','adapters','48h','time_future')) {
+    foreach ($name in @('core','portable','adapters','48h','time_future','h743_fault')) {
         & gcc -std=c11 -O2 -Wall -Wextra -Werror -pedantic "test_$name.c" -o (Join-Path $dir "$name.exe")
         if ($LASTEXITCODE -ne 0) { throw "Compile failed: $name" }
         & (Join-Path $dir "$name.exe")

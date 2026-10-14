@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 import struct
 import unittest
+import zlib
 
 
 def load_tool(name):
@@ -14,9 +15,73 @@ def load_tool(name):
 
 live = load_tool('decode_live')
 snapshot = load_tool('decode_snapshot')
+fault = load_tool('decode_fault')
 
 
 class ToolTests(unittest.TestCase):
+    def fault_payload(self, **values):
+        record = dict.fromkeys(fault.FIELDS, 0)
+        record.update(magic=0x4C544631, version=1, flags=(3 << 16) | 1,
+                      exc_return=0xFFFFFFFD, psp=0x24000100,
+                      xpsr=1 << 24, pc=0x08001234, lr=0x08005679)
+        record.update(values)
+        data = struct.pack('<31I', *(record[name] for name in fault.FIELDS[:-1]))
+        return data + struct.pack('<I', zlib.crc32(data))
+
+    def test_fault_crc_commit_and_offset(self):
+        payload = self.fault_payload()
+        result = fault.decode_fault(b'prefix' + payload, 6)
+        self.assertEqual(result['exception'], 'HardFault')
+        self.assertTrue(result['frame_valid'])
+        self.assertEqual(result['raw']['pc'], 0x08001234)
+        for i in range(128):
+            corrupt = bytearray(payload)
+            corrupt[i] ^= 1
+            with self.assertRaises(ValueError):
+                fault.decode_fault(corrupt)
+
+    def test_fault_input_errors(self):
+        for data, offset in [(bytes(128), 0), (b'', 0), (bytes(128), -1),
+                             (self.fault_payload(version=2), 0)]:
+            with self.assertRaises(ValueError):
+                fault.decode_fault(data, offset)
+
+    def test_fault_forced_imprecise_and_axim(self):
+        result = fault.decode_fault(self.fault_payload(
+            cfsr=(1 << 10), hfsr=(1 << 30), abfsr=8 | (3 << 8)))
+        self.assertIn('IMPRECISERR', result['cfsr_flags'])
+        self.assertIn('FORCED', result['hfsr_flags'])
+        self.assertEqual(result['axim_response'], 'DECERR')
+        self.assertTrue(any('offending instruction' in note for note in result['notes']))
+
+    def test_fault_stack_errors_reject_pc_and_fp_frame(self):
+        result = fault.decode_fault(self.fault_payload(exc_return=0xFFFFFFED))
+        self.assertTrue(result['fp_extended'])
+        self.assertTrue(result['frame_valid'])
+        for bit in (3, 4, 5, 11, 12, 13):
+            result = fault.decode_fault(self.fault_payload(cfsr=1 << bit))
+            self.assertFalse(result['frame_valid'])
+        self.assertFalse(fault.decode_fault(self.fault_payload(flags=(3 << 16) | 2))['frame_valid'])
+        self.assertFalse(fault.decode_fault(self.fault_payload(xpsr=0))['frame_valid'])
+
+    def test_fault_address_validity_and_flash_errata(self):
+        result = fault.decode_fault(self.fault_payload(
+            cfsr=(1 << 7) | (1 << 15), flash_sr2=1 << 26))
+        self.assertTrue(result['mmfar_valid'])
+        self.assertTrue(result['bfar_valid_flag'])
+        self.assertTrue(result['bfar_requires_ecc_review'])
+        self.assertTrue(any('ES0392' in note for note in result['notes']))
+        result = fault.decode_fault(self.fault_payload())
+        self.assertFalse(result['bfar_valid_flag'])
+        self.assertFalse(result['mmfar_valid'])
+
+    def test_fault_reset_flags_and_configurable_faults(self):
+        for exception, name in [(4, 'MemManage'), (5, 'BusFault'), (6, 'UsageFault')]:
+            result = fault.decode_fault(self.fault_payload(
+                flags=(exception << 16) | 1, reset_flags=(1 << 26)))
+            self.assertEqual(result['exception'], name)
+            self.assertEqual(result['boot_reset_flags'], ['IWDG1RSTF'])
+
     def test_unpacked_large_block_and_full_pc(self):
         data = struct.pack('<IIII', 0xC0001000, 0x90000201, 80000, 33)
         self.assertEqual(live.decode_records(data, 1, 3600),

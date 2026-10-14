@@ -5,6 +5,14 @@
 #ifndef LEAKTRACE_CONFIG_H
 #define LEAKTRACE_CONFIG_H
 
+/* Optional project-wide profile, e.g.
+ * -DLT_USER_CONFIG_HEADER=\"LeakTrace_H743_Config.h\"
+ * Set the same definition and include path for every translation unit.
+ */
+#ifdef LT_USER_CONFIG_HEADER
+#include LT_USER_CONFIG_HEADER
+#endif
+
 #ifndef LT_MAX_LIVE
 #define LT_MAX_LIVE 64u
 #endif

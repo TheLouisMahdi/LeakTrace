@@ -4,6 +4,8 @@ Fixed-storage heap diagnostics for embedded C projects, with optional FreeRTOS, 
 
 LeakTrace records allocation/free events, keeps a live-allocation table, and reports heap measurements supplied by your application. Its core is independent of STM32 HAL, a particular board and an RTOS.
 
+**Start here:** [STM32H743 example](examples/stm32h743/README.md) · [All functions](docs/API.md) · [Settings and RAM sizing](docs/CONFIGURATION.md)
+
 ## Features
 
 - Allocation/free counters, allocation failures, live block count and tracked bytes.
@@ -29,6 +31,10 @@ LeakTrace records allocation/free events, keeps a live-allocation table, and rep
 | [`tools/decode_live.py`](tools/decode_live.py) | Decodes live records and groups outstanding allocations by caller PC. |
 | [`tools/resolve_pc.py`](tools/resolve_pc.py) | Resolves saved caller PCs to function names/source lines using a matching ELF and `addr2line`. |
 | [`.gitignore`](.gitignore) | Excludes generated binaries, memory dumps and Python caches. |
+| [`LICENSE`](LICENSE) | MIT license for this project's code and examples. |
+| [`docs/API.md`](docs/API.md) | Core/adapter functions, return values and interpretation of results. |
+| [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) | Every configuration option, platform hooks and RAM formulas. |
+| [`examples/stm32h743/`](examples/stm32h743/README.md) | H743 profile, platform C/header, linker fragment and startup/file-placement guide. Each example file is explained in that guide. |
 | [`README.md`](README.md) | Integration, usage and current limitations. |
 
 <details>
@@ -52,6 +58,21 @@ LeakTrace records allocation/free events, keeps a live-allocation table, and rep
 </details>
 
 ## Getting started
+
+### Which files go into which project?
+
+| Project | Target sources to compile | Headers and placement |
+|---|---|---|
+| Single-threaded C with libc | `leaktrace.c`, `LeakTrace_Stdlib.c` | Keep core/config/stdlib headers in one library include directory. Call the `lt_*` wrappers. |
+| FreeRTOS heap_4/heap_5 | `leaktrace.c` plus your platform poll/clock code | Core/config headers in the library include directory; include `LeakTrace_FreeRTOS.h` at the end of the existing RTOS config. |
+| C++ / standard containers | C core plus `LeakTrace_Cpp.cpp` | Core/config headers accessible to both C and C++; initialize before traced allocations. Custom container allocators need their own hooks. |
+| Custom allocator / pool | `leaktrace.c` plus your allocator adapter | Put event/time/lock integration in an application/platform source file. |
+| ThreadX or another RTOS | Core plus an application-written RTOS/allocator port | A ready-made ThreadX adapter is not supplied. Provide serialization, seconds, allocation events and optional real heap metrics. |
+
+`tools/` runs on the computer, not on the MCU. Exclude `tests/`, unused adapters
+and unused examples from the firmware build; do not compile every `.c` file in
+this repository automatically. The [H743 walkthrough](examples/stm32h743/README.md)
+shows a concrete `Core/Inc`, `Core/Src`, middleware and linker layout.
 
 ### 1. Add the core
 
@@ -122,7 +143,9 @@ Find `g_lt` in the exact firmware's ELF/map file. It has no fixed address. `g_lt
 python tools/decode_snapshot.py stats.bin
 ```
 
-The decoder name does not imply a built-in snapshot task: it reads `lt_stats_t`. This standalone package does not define an application-specific `g_lt_snapshot`.
+The decoder name does not imply a built-in snapshot task: it reads `lt_stats_t`.
+The core does not define `g_lt_snapshot`; the optional H743 example supplies a
+cache-published, sequence-checked stats snapshot with that name.
 
 For live records, export from `g_lt.live[0]` and use the count/time from the same consistent capture:
 
@@ -149,6 +172,11 @@ Raw state reads are not atomic. The application must provide a coherent snapshot
 
 Edit `LeakTrace_Config.h` for your RAM budget. History stores heap usage in 32-byte units. Optional `LT_PACKED=1` reduces record storage but limits a block size to 65,535 bytes, uses a caller-PC window relative to `LT_TEXT_BASE`, and quantizes timestamps to 10 seconds. Check `flags` for clipping/range errors.
 
+For a project-specific profile, define `LT_USER_CONFIG_HEADER` for all source
+files. See [configuration options and exact sizing examples](docs/CONFIGURATION.md).
+The H743 profile uses 11,128 bytes for the tracker; its snapshot and alignment
+bring occupied monitor storage to 11,296 bytes inside a 16 KiB reserved region.
+
 ## Current limitations
 
 - **One global live set and one heap measurement set.** Independent allocator/region statistics and allocator IDs are not implemented. Nested pools need careful instrumentation to avoid double-counting backing storage.
@@ -170,4 +198,24 @@ python -m unittest discover -s tests -p test_tools.py -v
 
 The native C/C++ regression suite and all seven Python tool tests pass. The core has also been cross-compiled without warnings for Cortex-M0+, M3, M4, M7 and M33. This is compilation coverage, not hardware execution across those targets. The 48-hour tests advance simulated timestamps; they are not 48-hour board tests.
 
-Core and adapter source files retain their existing `SPDX-License-Identifier: MIT` notices.
+The H743 integration source compiles with ARM GCC 14.3 (`-Wall -Wextra -Werror`),
+CMSIS 5.9.0, ST H7 device headers and FreeRTOS-Kernel V10.4.6. A limited linker
+probe confirms its section layout and sizes. A complete Cube firmware build and
+execution on an H743 board have not been verified.
+
+<details>
+<summary>Sources, acknowledgements and licensing</summary>
+
+<p><sub>LeakTrace code, documentation and example integration files: <a href="LICENSE">MIT</a>, copyright 2026 TheLouisMahdi. Existing SPDX notices are retained. External integration dependencies and technical references are listed below with their separate licenses; their implementations are not bundled.</sub></p>
+
+<p><sub><a href="https://github.com/FreeRTOS/FreeRTOS-Kernel">FreeRTOS-Kernel</a>: <a href="https://github.com/FreeRTOS/FreeRTOS-Kernel/blob/main/LICENSE.md">MIT</a>. Allocation hooks, heap_4/heap_5 behavior and RTOS APIs; see the <a href="https://www.freertos.org/Documentation/02-Kernel/02-Kernel-features/09-Memory-management/01-Memory-management">official heap documentation</a>.</sub></p>
+
+<p><sub><a href="https://github.com/ARM-software/CMSIS_5">Arm CMSIS_5</a>: <a href="https://github.com/ARM-software/CMSIS_5/blob/5.9.0/LICENSE.txt">Apache-2.0</a>. Cortex-M definitions, cache-maintenance interfaces and barriers. <a href="https://github.com/STMicroelectronics/cmsis-device-h7">ST CMSIS device H7</a>: <a href="https://github.com/STMicroelectronics/cmsis-device-h7/blob/master/LICENSE.md">Apache-2.0</a>. <a href="https://github.com/STMicroelectronics/stm32h7xx-hal-driver">ST H7 HAL</a>: <a href="https://github.com/STMicroelectronics/stm32h7xx-hal-driver/blob/master/LICENSE.md">BSD-3-Clause</a>, an external Cube-project dependency/reference.</sub></p>
+
+<p><sub>ST technical references: <a href="https://www.st.com/resource/en/reference_manual/rm0433-stm32h743-753-and-stm32h750-value-line-advanced-arm-based-32-bit-mcus-stmicroelectronics.pdf">RM0433</a> for the H743 memory map, <a href="https://www.st.com/resource/en/application_note/an4839-level-1-cache-on-stm32f7-series-and-stm32h7-series-stmicroelectronics.pdf">AN4839</a> for cache coherence, and <a href="https://www.st.com/resource/en/user_manual/um2237-stm32cubeprogrammer-software-description-stmicroelectronics.pdf">UM2237</a> for CubeProgrammer. These documents remain subject to their publishers' copyright/terms; they are linked, not redistributed under this project's MIT license.</sub></p>
+
+<p><sub><a href="https://sourceware.org/newlib/libc.html">newlib</a>: libc allocation/reentrancy reference; <a href="https://sourceware.org/newlib/COPYING.NEWLIB">mixed per-file licenses</a>. <a href="https://www.gnu.org/software/binutils/">GNU Binutils</a>: external addr2line/linker tools, GPL-3.0-or-later; the <a href="https://sourceware.org/binutils/docs/ld.html">ld manual</a> states GNU FDL 1.3. No Binutils or newlib implementation is bundled.</sub></p>
+
+<p><sub><a href="https://github.com/cplusplus/draft">C++ working draft</a> / <a href="https://eel.is/c++draft/vector.capacity">vector capacity clauses</a>: language/container behavior references only; no repository-wide open-source license is asserted for the standards text. <a href="https://docs.python.org/3/license.html">Python</a>: external tool runtime, PSF license terms.</sub></p>
+
+</details>

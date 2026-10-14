@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+build/
+*.o
+*.obj
+*.exe
+*.elf
+*.map
+*.bin
+*.zip
+*.stackdump
